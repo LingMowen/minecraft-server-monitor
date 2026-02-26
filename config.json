@@ -1,0 +1,15 @@
+{
+  "servers": [
+    {
+      "id": "server-1",
+      "name": "Ciallo服务器",
+      "host": "mc.ciallo.ltd",
+      "port": 25565
+    }
+  ],
+  "web": {
+    "port": 3002,
+    "username": "admin",
+    "password": "admin123"
+  }
+}
