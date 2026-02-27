@@ -324,6 +324,84 @@ class ServerManager extends EventEmitter {
   getPlayerStats(serverId: string): PlayerStats | undefined {
     return this.playerStats.get(serverId);
   }
+
+  getHistoryForExport(serverId: string, range: 'hour' | 'day' | 'week' | 'month' | 'all' = 'hour'): HistoryRecord[] {
+    const history = this.history.get(serverId) || [];
+    const now = Date.now();
+    
+    if (range === 'all') {
+      return history;
+    }
+    
+    let cutoff: number;
+    switch (range) {
+      case 'hour':
+        cutoff = now - 60 * 60 * 1000;
+        break;
+      case 'day':
+        cutoff = now - 24 * 60 * 60 * 1000;
+        break;
+      case 'week':
+        cutoff = now - 7 * 24 * 60 * 60 * 1000;
+        break;
+      case 'month':
+        cutoff = now - 30 * 24 * 60 * 60 * 1000;
+        break;
+      default:
+        cutoff = now - 60 * 60 * 1000;
+    }
+    
+    return history.filter(r => r.timestamp > cutoff);
+  }
+
+  importHistory(serverId: string, records: HistoryRecord[]): { success: boolean; imported: number } {
+    const existingHistory = this.history.get(serverId) || [];
+    const existingIds = new Set(existingHistory.map(r => `${r.timestamp}-${r.players}-${r.latency}`));
+    
+    let imported = 0;
+    const newRecords: HistoryRecord[] = [];
+    
+    for (const record of records) {
+      const id = `${record.timestamp}-${record.players}-${record.latency}`;
+      if (!existingIds.has(id)) {
+        newRecords.push(record);
+        imported++;
+      }
+    }
+    
+    const mergedHistory = [...existingHistory, ...newRecords].sort((a, b) => a.timestamp - b.timestamp);
+    this.history.set(serverId, mergedHistory);
+    
+    this.saveHistory();
+    
+    return { success: true, imported };
+  }
+
+  createBackup(): { success: boolean; filename: string } {
+    try {
+      const backupDir = path.join(__dirname, '../../data/backup');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `backup-${timestamp}.json`;
+      const filepath = path.join(backupDir, filename);
+      
+      const data = {
+        history: Object.fromEntries(this.history),
+        playerStats: Object.fromEntries(this.playerStats),
+        backupTime: Date.now()
+      };
+      
+      fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
+      
+      return { success: true, filename };
+    } catch (error) {
+      console.error('Failed to create backup:', error);
+      return { success: false, filename: '' };
+    }
+  }
 }
 
 export default new ServerManager();

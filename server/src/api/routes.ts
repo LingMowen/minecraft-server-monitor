@@ -220,4 +220,96 @@ router.get('/settings', authMiddleware, (_req: Request, res: Response) => {
   }
 });
 
+router.get('/servers/:id/export', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const serverId = req.params.id;
+    const format = (req.query.format as 'json' | 'csv') || 'json';
+    const range = (req.query.range as 'hour' | 'day' | 'week' | 'month' | 'all') || 'hour';
+    
+    const history = serverManager.getHistoryForExport(serverId, range);
+    const serverConfig = serverManager.getServerConfig(serverId);
+    
+    if (!serverConfig) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
+    
+    const serverName = serverConfig.name;
+    
+    if (format === 'csv') {
+      const csvHeader = '时间戳,时间,玩家数,延迟(ms)\n';
+      const csvRows = history.map(r => {
+        const date = new Date(r.timestamp).toLocaleString('zh-CN');
+        return `${r.timestamp},${date},${r.players},${r.latency}`;
+      }).join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv;charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${serverName}-history-${range}.csv"`);
+      res.send(csvHeader + csvRows);
+    } else {
+      const exportData = {
+        server: serverName,
+        range,
+        exportTime: new Date().toISOString(),
+        data: history
+      };
+      
+      res.setHeader('Content-Type', 'application/json;charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${serverName}-history-${range}.json"`);
+      res.json(exportData);
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to export data' });
+  }
+});
+
+router.post('/servers/:id/import', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const serverId = req.params.id;
+    const { data } = req.body;
+    
+    const serverConfig = serverManager.getServerConfig(serverId);
+    if (!serverConfig) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
+    
+    if (!Array.isArray(data)) {
+      return res.status(400).json({ error: 'Invalid data format' });
+    }
+    
+    const validRecords = data.filter(r => 
+      typeof r.timestamp === 'number' && 
+      typeof r.players === 'number' &&
+      typeof r.latency === 'number'
+    );
+    
+    const result = serverManager.importHistory(serverId, validRecords);
+    
+    res.json({ 
+      success: true, 
+      imported: result.imported,
+      message: `成功导入 ${result.imported} 条记录`
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to import data' });
+  }
+});
+
+router.post('/backup', authMiddleware, (_req: Request, res: Response) => {
+  try {
+    const result = serverManager.createBackup();
+    
+    if (result.success) {
+      res.json({ 
+        success: true, 
+        filename: result.filename,
+        message: `备份已保存为 ${result.filename}`
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to create backup' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create backup' });
+  }
+});
+
 export default router;

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { api, TimeRange } from '../services/api';
 import { ServerWithStatus } from '../types';
 
 interface AdminPanelProps {
@@ -9,13 +9,19 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState<'servers' | 'settings'>('servers');
+  const [activeTab, setActiveTab] = useState<'servers' | 'data' | 'settings'>('servers');
   const [editingServer, setEditingServer] = useState<ServerWithStatus | null>(null);
   const [serverForm, setServerForm] = useState({ name: '', host: '', port: 25565 });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [dataForm, setDataForm] = useState({ 
+    selectedServer: servers[0]?.id || '', 
+    format: 'json' as 'json' | 'csv', 
+    range: 'day' as TimeRange 
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editingServer) {
@@ -28,6 +34,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) 
       setServerForm({ name: '', host: '', port: 25565 });
     }
   }, [editingServer]);
+
+  useEffect(() => {
+    if (servers.length > 0 && !dataForm.selectedServer) {
+      setDataForm(prev => ({ ...prev, selectedServer: servers[0].id }));
+    }
+  }, [servers]);
 
   const handleAddServer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +126,65 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) 
     }
   };
 
+  const handleExport = () => {
+    if (!dataForm.selectedServer) {
+      setError('请选择服务器');
+      return;
+    }
+    api.exportData(dataForm.selectedServer, dataForm.format, dataForm.range);
+    setSuccess('导出已开始下载');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!dataForm.selectedServer) {
+      setError('请先选择服务器');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      if (!data.data || !Array.isArray(data.data)) {
+        setError('文件格式不正确，请使用导出的JSON文件');
+        return;
+      }
+
+      const result = await api.importData(dataForm.selectedServer, data.data);
+      setSuccess(result.message);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导入失败，请检查文件格式');
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleBackup = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await api.createBackup();
+      setSuccess(result.message);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '备份失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     api.logout();
     onRefresh();
@@ -122,7 +193,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="admin-panel" onClick={e => e.stopPropagation()}>
+      <div className="admin-panel admin-panel-wide" onClick={e => e.stopPropagation()}>
         <button className="modal-close-btn" onClick={onClose}>×</button>
         
         <div className="admin-header">
@@ -139,6 +210,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) 
             onClick={() => setActiveTab('servers')}
           >
             服务器管理
+          </button>
+          <button 
+            className={`admin-tab ${activeTab === 'data' ? 'active' : ''}`}
+            onClick={() => setActiveTab('data')}
+          >
+            数据管理
           </button>
           <button 
             className={`admin-tab ${activeTab === 'settings' ? 'active' : ''}`}
@@ -241,6 +318,99 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) 
                       </div>
                     ))
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'data' && (
+            <div className="admin-data">
+              <div className="admin-section">
+                <h3>📤 导出数据</h3>
+                <div className="data-form">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>选择服务器</label>
+                      <select 
+                        value={dataForm.selectedServer}
+                        onChange={e => setDataForm({ ...dataForm, selectedServer: e.target.value })}
+                      >
+                        {servers.map(server => (
+                          <option key={server.id} value={server.id}>{server.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>导出格式</label>
+                      <select 
+                        value={dataForm.format}
+                        onChange={e => setDataForm({ ...dataForm, format: e.target.value as 'json' | 'csv' })}
+                      >
+                        <option value="json">JSON</option>
+                        <option value="csv">CSV</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>时间范围</label>
+                      <select 
+                        value={dataForm.range}
+                        onChange={e => setDataForm({ ...dataForm, range: e.target.value as TimeRange })}
+                      >
+                        <option value="hour">最近1小时</option>
+                        <option value="day">最近24小时</option>
+                        <option value="week">最近7天</option>
+                        <option value="month">最近30天</option>
+                        <option value="all">全部数据</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-buttons">
+                    <button className="btn-submit" onClick={handleExport}>
+                      导出数据
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="admin-section">
+                <h3>📥 导入数据</h3>
+                <div className="data-form">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>选择服务器</label>
+                      <select 
+                        value={dataForm.selectedServer}
+                        onChange={e => setDataForm({ ...dataForm, selectedServer: e.target.value })}
+                      >
+                        {servers.map(server => (
+                          <option key={server.id} value={server.id}>{server.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>选择文件</label>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept=".json"
+                        onChange={handleImport}
+                        disabled={loading}
+                      />
+                    </div>
+                  </div>
+                  <p className="data-hint">请选择导出的JSON文件进行导入，数据将合并到现有历史记录中</p>
+                </div>
+              </div>
+
+              <div className="admin-section">
+                <h3>💾 数据备份</h3>
+                <div className="data-form">
+                  <p className="data-hint">创建完整数据备份，包含所有服务器的历史记录和统计数据</p>
+                  <div className="form-buttons">
+                    <button className="btn-submit" onClick={handleBackup} disabled={loading}>
+                      {loading ? '处理中...' : '创建备份'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

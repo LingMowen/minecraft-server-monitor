@@ -173,7 +173,8 @@ export const ServerDetailModal: React.FC<ServerDetailModalProps> = ({
     hour: '1小时',
     day: '1天',
     week: '1周',
-    month: '1月'
+    month: '1月',
+    all: '全部'
   };
 
   return (

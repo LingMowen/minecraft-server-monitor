@@ -17,7 +17,7 @@ export interface PlayerStats {
   maxPlayersMonthTime: number;
 }
 
-export type TimeRange = 'hour' | 'day' | 'week' | 'month';
+export type TimeRange = 'hour' | 'day' | 'week' | 'month' | 'all';
 
 const getToken = (): string | null => {
   return localStorage.getItem('token');
@@ -135,6 +135,24 @@ export const api = {
     fetchApi<{ success: boolean }>('/settings/password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  exportData: (serverId: string, format: 'json' | 'csv', range: TimeRange = 'hour') => {
+    const token = getToken();
+    const url = `${API_BASE}/servers/${serverId}/export?format=${format}&range=${range}`;
+    window.open(url, '_blank');
+  },
+
+  importData: async (serverId: string, data: HistoryRecord[]) => {
+    return fetchApi<{ success: boolean; imported: number; message: string }>(`/servers/${serverId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ data }),
+    });
+  },
+
+  createBackup: () =>
+    fetchApi<{ success: boolean; filename: string; message: string }>('/backup', {
+      method: 'POST',
     }),
 };
 
