@@ -3,8 +3,15 @@ import serverManager, { ServerConfig } from '../serverManager';
 import { authMiddleware, AuthRequest, generateToken } from '../middleware/auth';
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const router = Router();
+
+const CURRENT_VERSION = '1.2.0';
+const GITHUB_REPO = 'LingMowen/minecraft-server-monitor';
 
 interface Config {
   servers: Array<{
@@ -17,6 +24,10 @@ interface Config {
     port: number;
     username: string;
     password: string;
+  };
+  update?: {
+    lastCheck?: number;
+    autoUpdate?: boolean;
   };
 }
 
@@ -309,6 +320,102 @@ router.post('/backup', authMiddleware, (_req: Request, res: Response) => {
     }
   } catch (error) {
     res.status(500).json({ error: 'Failed to create backup' });
+  }
+});
+
+router.get('/version', (_req: Request, res: Response) => {
+  res.json({
+    current: CURRENT_VERSION,
+    repo: GITHUB_REPO
+  });
+});
+
+router.get('/update/check', async (_req: Request, res: Response) => {
+  try {
+    const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Minecraft-Monitor'
+      }
+    });
+    
+    if (response.status === 404) {
+      return res.json({
+        current: CURRENT_VERSION,
+        latest: CURRENT_VERSION,
+        releaseName: '',
+        releaseNotes: '',
+        releaseDate: '',
+        isUpdateAvailable: false,
+        message: '暂无可用版本，请前往 GitHub 发布新版本'
+      });
+    }
+    
+    if (!response.ok) {
+      return res.status(500).json({ error: 'Failed to check for updates' });
+    }
+    
+    const data = await response.json() as { tag_name: string; name: string; body: string; published_at: string };
+    const latestVersion = data.tag_name.replace('v', '');
+    const isUpdateAvailable = latestVersion !== CURRENT_VERSION;
+    
+    res.json({
+      current: CURRENT_VERSION,
+      latest: latestVersion,
+      releaseName: data.name,
+      releaseNotes: data.body,
+      releaseDate: data.published_at,
+      isUpdateAvailable
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check for updates' });
+  }
+});
+
+router.post('/update/apply', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      message: '更新功能已触发，请手动执行以下命令更新系统：',
+      commands: [
+        'cd ..',
+        'git pull origin main',
+        'cd server && npm install',
+        'cd ../client && npm install',
+        'npm run build'
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to apply update' });
+  }
+});
+
+router.get('/update/auto', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    const projectRoot = path.join(__dirname, '../../..');
+    
+    const { stdout: statusOutput } = await execAsync('git -C "' + projectRoot + '" status', { cwd: projectRoot });
+    const isClean = statusOutput.includes('nothing to commit');
+    
+    if (!isClean) {
+      return res.json({
+        success: false,
+        message: '当前有未提交的更改，请先提交或stash后再更新'
+      });
+    }
+    
+    const { stdout: pullOutput } = await execAsync('git -C "' + projectRoot + '" pull origin main', { cwd: projectRoot });
+    
+    res.json({
+      success: true,
+      message: '代码已更新',
+      details: pullOutput
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: '自动更新失败，请手动执行 git pull' 
+    });
   }
 });
 

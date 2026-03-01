@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, TimeRange } from '../services/api';
 import { ServerWithStatus } from '../types';
+import AboutPanel from './AboutPanel';
 
 interface AdminPanelProps {
   servers: ServerWithStatus[];
@@ -9,7 +10,8 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState<'servers' | 'data' | 'settings'>('servers');
+  const [activeTab, setActiveTab] = useState<'servers' | 'data' | 'settings' | 'about'>('servers');
+  const [showAbout, setShowAbout] = useState(false);
   const [editingServer, setEditingServer] = useState<ServerWithStatus | null>(null);
   const [serverForm, setServerForm] = useState({ name: '', host: '', port: 25565 });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -222,6 +224,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) 
             onClick={() => setActiveTab('settings')}
           >
             系统设置
+          </button>
+          <button 
+            className={`admin-tab ${activeTab === 'about' ? 'active' : ''}`}
+            onClick={() => setActiveTab('about')}
+          >
+            关于
           </button>
         </div>
 
@@ -459,6 +467,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ servers, onClose, onRefresh }) 
                 </form>
               </div>
             </div>
+          )}
+
+          {activeTab === 'about' && (
+             <AboutPanel />
           )}
         </div>
       </div>

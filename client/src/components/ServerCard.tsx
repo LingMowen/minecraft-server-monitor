@@ -73,22 +73,31 @@ export const ServerDetailModal: React.FC<ServerDetailModalProps> = ({
 }) => {
   const status = server.status;
   const isOnline = status?.online;
-  const [historyData, setHistoryData] = useState<HistoryRecord[]>([]);
+  const [playerHistoryData, setPlayerHistoryData] = useState<HistoryRecord[]>([]);
+  const [latencyHistoryData, setLatencyHistoryData] = useState<HistoryRecord[]>([]);
+  const [tpsHistoryData, setTpsHistoryData] = useState<HistoryRecord[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerStats | null>(null);
   const [playerRange, setPlayerRange] = useState<TimeRange>('hour');
   const [latencyRange, setLatencyRange] = useState<TimeRange>('hour');
+  const [tpsRange, setTpsRange] = useState<TimeRange>('hour');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadHistoryData();
+    loadAllHistoryData();
     loadPlayerStats();
-  }, [server.id, playerRange, latencyRange]);
+  }, [server.id, playerRange, latencyRange, tpsRange]);
 
-  const loadHistoryData = async () => {
+  const loadAllHistoryData = async () => {
     setLoading(true);
     try {
-      const data = await api.getServerHistory(server.id, playerRange);
-      setHistoryData(data);
+      const [playerData, latencyData, tpsData] = await Promise.all([
+        api.getServerHistory(server.id, playerRange),
+        api.getServerHistory(server.id, latencyRange),
+        api.getServerHistory(server.id, tpsRange)
+      ]);
+      setPlayerHistoryData(playerData);
+      setLatencyHistoryData(latencyData);
+      setTpsHistoryData(tpsData);
     } catch (error) {
       console.error('Failed to load history:', error);
     } finally {
@@ -134,38 +143,43 @@ export const ServerDetailModal: React.FC<ServerDetailModalProps> = ({
     return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  const chartData = historyData.map(record => ({
+  const chartData = playerHistoryData.map(record => ({
     time: formatTime(record.timestamp, playerRange),
     fullTime: formatDate(record.timestamp),
-    players: record.players,
-    latency: record.latency
+    players: record.players
   }));
 
-  const latencyChartData = historyData.map(record => ({
+  const latencyChartData = latencyHistoryData.map(record => ({
     time: formatTime(record.timestamp, latencyRange),
     fullTime: formatDate(record.timestamp),
-    players: record.players,
-    latency: record.latency
+    latency: record.latency,
+    tps: record.tps
   }));
 
-  const avgLatency = historyData.length > 0 
-    ? Math.round(historyData.reduce((a, b) => a + b.latency, 0) / historyData.length)
+  const tpsChartData = tpsHistoryData.map(record => ({
+    time: formatTime(record.timestamp, tpsRange),
+    fullTime: formatDate(record.timestamp),
+    tps: record.tps
+  }));
+
+  const avgLatency = latencyHistoryData.length > 0 
+    ? Math.round(latencyHistoryData.reduce((a, b) => a + b.latency, 0) / latencyHistoryData.length)
     : 0;
 
-  const maxLatency = historyData.length > 0 
-    ? Math.max(...historyData.map(d => d.latency))
+  const maxLatency = latencyHistoryData.length > 0 
+    ? Math.max(...latencyHistoryData.map(d => d.latency))
     : 0;
 
-  const minLatency = historyData.length > 0 
-    ? Math.min(...historyData.map(d => d.latency))
+  const minLatency = latencyHistoryData.length > 0 
+    ? Math.min(...latencyHistoryData.map(d => d.latency))
     : 0;
 
-  const avgPlayers = historyData.length > 0 
-    ? (historyData.reduce((a, b) => a + b.players, 1) / historyData.length).toFixed(1)
+  const avgPlayers = playerHistoryData.length > 0 
+    ? (playerHistoryData.reduce((a, b) => a + b.players, 1) / playerHistoryData.length).toFixed(1)
     : 0;
 
-  const hasPlayerChange = historyData.length > 1 && 
-    historyData.some(d => d.players !== historyData[0].players);
+  const hasPlayerChange = playerHistoryData.length > 1 && 
+    playerHistoryData.some(d => d.players !== playerHistoryData[0].players);
 
   const chartColor = '#a78bfa';
 
@@ -257,7 +271,7 @@ export const ServerDetailModal: React.FC<ServerDetailModalProps> = ({
                 <p className="modal-description">{status?.description || '无描述'}</p>
               </div>
 
-              {historyData.length > 0 && (
+              {latencyHistoryData.length > 0 && (
                 <div className="modal-section">
                   <h4>📊 统计摘要</h4>
                   <div className="stats-summary">
@@ -383,6 +397,47 @@ export const ServerDetailModal: React.FC<ServerDetailModalProps> = ({
                         formatter={(value: number) => [`${value}ms`, '延迟']}
                       />
                       <Line type="monotone" dataKey="latency" stroke="var(--accent-cyan)" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="chart-empty">暂无数据</div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-section">
+              <div className="chart-header">
+                <h4>⚡ TPS趋势</h4>
+                <div className="time-range-selector">
+                  {(['hour', 'day', 'week', 'month'] as TimeRange[]).map(range => (
+                    <button
+                      key={range}
+                      className={`time-range-btn ${tpsRange === range ? 'active' : ''}`}
+                      onClick={() => setTpsRange(range)}
+                    >
+                      {rangeLabels[range]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="modal-chart-large">
+                {loading ? (
+                  <div className="chart-loading">加载中...</div>
+                ) : tpsChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={tpsChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                      <XAxis dataKey="time" stroke="var(--text-secondary)" fontSize={10} interval="preserveStartEnd" />
+                      <YAxis stroke="var(--text-secondary)" fontSize={10} domain={[0, 20]} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          background: 'var(--bg-card)', 
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '12px'
+                        }}
+                        formatter={(value: number) => [`${value}`, 'TPS']}
+                      />
+                      <Line type="monotone" dataKey="tps" stroke="var(--accent-green)" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (

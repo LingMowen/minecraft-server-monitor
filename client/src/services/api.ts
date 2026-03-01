@@ -6,6 +6,7 @@ export interface HistoryRecord {
   timestamp: number;
   players: number;
   latency: number;
+  tps: number;
 }
 
 export interface PlayerStats {
@@ -154,6 +155,27 @@ export const api = {
     fetchApi<{ success: boolean; filename: string; message: string }>('/backup', {
       method: 'POST',
     }),
+
+  getVersion: () =>
+    fetchApi<{ current: string; repo: string }>('/version'),
+
+  checkUpdate: () =>
+    fetchApi<{ 
+      current: string; 
+      latest: string; 
+      releaseName: string; 
+      releaseNotes: string; 
+      releaseDate: string;
+      isUpdateAvailable: boolean 
+    }>('/update/check'),
+
+  applyUpdate: () =>
+    fetchApi<{ success: boolean; message: string; commands?: string[] }>('/update/apply', {
+      method: 'POST',
+    }),
+
+  autoUpdate: () =>
+    fetchApi<{ success: boolean; message: string; details?: string }>('/update/auto'),
 };
 
 export default api;

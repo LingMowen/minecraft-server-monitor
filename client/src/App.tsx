@@ -6,6 +6,7 @@ import ServerCard, { ServerDetailModal } from './components/ServerCard';
 import AddServerModal from './components/AddServerModal';
 import LoginModal from './components/LoginModal';
 import AdminPanel from './components/AdminPanel';
+import AboutPanel from './components/AboutPanel';
 
 const App: React.FC = () => {
   const [servers, setServers] = useState<ServerWithStatus[]>([]);

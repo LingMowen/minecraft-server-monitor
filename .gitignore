@@ -7,6 +7,7 @@ client/build/
 
 # Data files
 server/data/
+data/
 
 # Environment files
 .env

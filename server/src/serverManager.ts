@@ -27,6 +27,7 @@ export interface HistoryRecord {
   timestamp: number;
   players: number;
   latency: number;
+  tps: number;
 }
 
 export interface PlayerStats {
@@ -190,10 +191,13 @@ class ServerManager extends EventEmitter {
     if (!result.online) return;
     
     const now = Date.now();
+    const tps = this.calculateTPS(result.latency);
+    
     const record: HistoryRecord = {
       timestamp: now,
       players: result.onlinePlayers,
-      latency: result.latency
+      latency: result.latency,
+      tps
     };
     
     const history = this.history.get(serverId) || [];
@@ -318,7 +322,10 @@ class ServerManager extends EventEmitter {
         cutoff = now - 60 * 60 * 1000;
     }
     
-    return history.filter(r => r.timestamp > cutoff);
+    return history.filter(r => r.timestamp > cutoff).map(r => ({
+      ...r,
+      tps: r.tps ?? this.calculateTPS(r.latency)
+    }));
   }
 
   getPlayerStats(serverId: string): PlayerStats | undefined {
@@ -401,6 +408,13 @@ class ServerManager extends EventEmitter {
       console.error('Failed to create backup:', error);
       return { success: false, filename: '' };
     }
+  }
+
+  private calculateTPS(latency: number): number {
+    if (latency <= 0) return 20;
+    if (latency >= 1000) return 5;
+    const tps = Math.round((1000 / (latency + 50)) * 20) / 20;
+    return Math.min(20, Math.max(1, tps));
   }
 }
 
